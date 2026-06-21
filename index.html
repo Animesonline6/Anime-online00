@@ -2627,11 +2627,6 @@
   .cal-admin-title { font-weight: 700; font-size: 0.88rem; margin-bottom: 0.15rem; }
   .cal-admin-meta { font-family: 'Space Mono', monospace; font-size: 0.58rem; color: var(--muted); letter-spacing: 1px; }
 </style>
-<!-- Adsterra Ads -->
-<script src="https://pl29334719.profitablecpmratenetwork.com/8f/93/07/8f930712d80511794cda1d09b82b015f.js"></script>
-<script src="https://pl29334718.profitablecpmratenetwork.com/92/60/03/926003b74182b2780a2e9cf5f3e42399.js"></script>
-
-</style>
 </head>
 <body>
 
@@ -2916,6 +2911,19 @@
     </div>
 
     <div class="admin-grid">
+
+      <!-- ANÚNCIOS -->
+      <div class="admin-card" style="border-color:rgba(245,197,24,0.3)">
+        <div class="admin-card-title" style="color:#f5c518"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;display:inline-block"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg> Anúncios</div>
+        <div class="toggle-row">
+          <span class="toggle-label">Mostrar anúncios no site</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="admin-ads-toggle" onchange="toggleAdsSetting(this.checked)">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div style="font-size:0.72rem;color:var(--muted)">Quando desligado, os anúncios deixam de ser carregados para todos os visitantes do site (não só para ti).</div>
+      </div>
 
       <!-- FORM ADICIONAR/EDITAR -->
       <div class="admin-card">
@@ -3605,6 +3613,73 @@ async function sbDelete(table, id) {
   } catch(e) {}
 }
 
+// ——— ANÚNCIOS (ligar/desligar a partir do admin) ———
+// Guardado na tabela "settings" (id, data) do Supabase — mesma estrutura
+// das outras tabelas (users, requests, animes...). Se a tabela "settings"
+// ainda não existir no projecto, cria-a com as colunas: id (text, PK), data (jsonb).
+const ADS_SCRIPT_URLS = [
+  'https://pl29334719.profitablecpmratenetwork.com/8f/93/07/8f930712d80511794cda1d09b82b015f.js',
+  'https://pl29334718.profitablecpmratenetwork.com/92/60/03/926003b74182b2780a2e9cf5f3e42399.js'
+];
+
+async function loadAdsSetting() {
+  // 1. Tenta cache local para resposta instantânea
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem('animeverso_ads_enabled')); } catch(e) {}
+  if (typeof cached === 'boolean') adsEnabled = cached;
+
+  // 2. Confirma/actualiza a partir da base de dados (fonte de verdade)
+  try {
+    const rows = await sbGet('settings', true);
+    const row = (rows || []).find(r => r && r.id === 'ads');
+    adsEnabled = !!(row && row.enabled);
+    localStorage.setItem('animeverso_ads_enabled', JSON.stringify(adsEnabled));
+  } catch(e) {
+    // Sem ligação/tabela ainda não criada: mantém o valor em cache (ou false por omissão)
+  }
+  return adsEnabled;
+}
+
+function injectAdsScripts() {
+  if (_adsScriptsInjected) return;
+  ADS_SCRIPT_URLS.forEach(src => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.dataset.adsterra = '1';
+    document.head.appendChild(s);
+  });
+  _adsScriptsInjected = true;
+}
+
+function removeAdsScripts() {
+  document.querySelectorAll('script[data-adsterra="1"]').forEach(s => s.remove());
+  _adsScriptsInjected = false;
+}
+
+async function applyAdsSetting() {
+  await loadAdsSetting();
+  if (adsEnabled) injectAdsScripts(); else removeAdsScripts();
+  renderAdsToggleUI();
+}
+
+function renderAdsToggleUI() {
+  const el = document.getElementById('admin-ads-toggle');
+  if (el) el.checked = adsEnabled;
+}
+
+async function toggleAdsSetting(checked) {
+  adsEnabled = checked;
+  localStorage.setItem('animeverso_ads_enabled', JSON.stringify(adsEnabled));
+  if (adsEnabled) injectAdsScripts(); else removeAdsScripts();
+  try {
+    await sbUpsert('settings', 'ads', { id: 'ads', enabled: adsEnabled });
+    sbInvalidateCache('settings');
+    showToast(adsEnabled ? 'Anúncios activados.' : 'Anúncios desactivados.');
+  } catch(e) {
+    showToast('Erro ao guardar definição. Verifica se a tabela "settings" existe no Supabase.');
+  }
+}
+
 // ——— LOADING OVERLAY ———
 function showLoading(msg='A carregar...') {
   let el = document.getElementById('sb-loading');
@@ -3662,6 +3737,8 @@ let currentFilter = '';
 let currentAnime = null;
 let currentEp = null;
 let adminUnlocked = false;
+let adsEnabled = false; // estado actual dos anúncios (carregado da BD)
+let _adsScriptsInjected = false;
 
 // ——— USER AUTH STATE ———
 let currentUser = null;
@@ -4016,36 +4093,6 @@ function renderProfile() {
     </div>
 
     <div class="profile-section" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
-      <div class="profile-section-title" style="color:#e84040"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;display:inline-block"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Aplicativo Android</div>
-      <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.85rem">Descarrega o app para Android e acede ao site mais facilmente.</p>
-      <div style="display:flex;flex-direction:column;gap:0.5rem">
-        <a href="https://drive.google.com/file/d/1fKYHnxUpd5fQzVJqZv03pJPcikTkSnnW/view?usp=drivesdk" target="_blank" rel="noopener" style="
-          display:flex;align-items:center;justify-content:center;gap:0.6rem;
-          background:linear-gradient(135deg,#e84040,#c1121f);
-          border:none;color:#fff;
-          font-family:'Space Mono',monospace;
-          font-size:0.72rem;letter-spacing:2px;text-transform:uppercase;
-          padding:0.7rem 1.2rem;border-radius:6px;cursor:pointer;
-          text-decoration:none;transition:all 0.2s;
-          box-shadow:0 4px 14px rgba(232,64,64,0.35);
-        " onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;display:inline-block"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg> Google Drive
-        </a>
-        <a href="https://www.mediafire.com/file/n3a958ojf89i3x3/Animes_online.apk/file" target="_blank" rel="noopener" style="
-          display:flex;align-items:center;justify-content:center;gap:0.6rem;
-          background:linear-gradient(135deg,#1a5040,#0d3025);
-          border:1px solid var(--admin-accent);color:var(--admin-accent);
-          font-family:'Space Mono',monospace;
-          font-size:0.72rem;letter-spacing:2px;text-transform:uppercase;
-          padding:0.7rem 1.2rem;border-radius:6px;cursor:pointer;
-          text-decoration:none;transition:all 0.2s;
-          box-shadow:0 4px 14px rgba(61,224,168,0.15);
-        " onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;display:inline-block"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg> MediaFire
-        </a>
-      </div>
-    </div>
-        <div class="profile-section" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
       <div class="profile-section-title" style="color:var(--admin-accent)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.15em;display:inline-block"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Área Restrita</div>
       <p style="font-size:0.78rem;color:var(--muted);margin-bottom:0.85rem">Acesso exclusivo para administradores do site.</p>
       <button onclick="openAdminWithPassword()" style="
@@ -4650,7 +4697,7 @@ function goPage(page) {
   if (page === 'admin' || page === 'admin-animes' || page === 'admin-filmes' || page === 'admin-comments') {
     if (!adminUnlocked) { showToast('Acesso negado.'); return; }
   }
-  if (page === 'admin') { renderAdminList(); renderAdminRequests(); renderAdminFilmes(); renderAdminCalendar(); }
+  if (page === 'admin') { renderAdminList(); renderAdminRequests(); renderAdminFilmes(); renderAdminCalendar(); loadAdsSetting().then(renderAdsToggleUI); }
   if (page === 'history') renderHistory();
   if (page === 'profile') renderProfile();
   if (page === 'suggestions') renderSuggestions();
@@ -5740,6 +5787,7 @@ function renderConcluidos() {
 // ——— INIT ———
 async function init() {
   loadUserSession();
+  applyAdsSetting();
 
   // Verifica se há cache local para mostrar instantaneamente
   const cacheKey = 'sbcache_animes';
@@ -5863,118 +5911,6 @@ function renderAdminCalendar() {
 }
 
 </script>
-
-<!-- APK Download Banner (bottom bar) -->
-<style>
-  #apk-banner {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 99999;
-    background: linear-gradient(135deg, #1a1a2e, #16213e);
-    border-top: 1px solid rgba(255,255,255,0.12);
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
-    animation: slideUpBanner 0.4s cubic-bezier(0.34,1.56,0.64,1);
-  }
-  @keyframes slideUpBanner {
-    from { transform: translateY(100%); opacity: 0; }
-    to   { transform: translateY(0);   opacity: 1; }
-  }
-  #apk-banner .apk-b-icon {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    background: linear-gradient(135deg, #e63946, #c1121f);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-    box-shadow: 0 4px 12px rgba(230,57,70,0.4);
-  }
-  #apk-banner .apk-b-text {
-    flex: 1;
-    min-width: 0;
-  }
-  #apk-banner .apk-b-title {
-    color: #fff;
-    font-size: 0.85rem;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  #apk-banner .apk-b-sub {
-    color: rgba(255,255,255,0.5);
-    font-size: 0.72rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  #apk-banner .apk-b-btns {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    flex-shrink: 0;
-  }
-  #apk-banner .apk-b-dl {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    background: linear-gradient(135deg, #e63946, #c1121f);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    cursor: pointer;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  #apk-banner .apk-b-dl2 {
-    background: linear-gradient(135deg, #1a5040, #0d3025);
-    box-shadow: 0 4px 12px rgba(61,224,168,0.25);
-  }
-  #apk-banner .apk-b-close {
-    background: none;
-    border: none;
-    color: rgba(255,255,255,0.4);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 4px;
-    line-height: 1;
-    flex-shrink: 0;
-  }
-  #apk-banner .apk-b-close:hover { color: #fff; }
-</style>
-
-<div id="apk-banner">
-  <div class="apk-b-icon">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-  </div>
-  <div class="apk-b-text">
-    <div class="apk-b-title">Baixar o App Android</div>
-    <div class="apk-b-sub">Grátis · Melhor experiência</div>
-  </div>
-  <div class="apk-b-btns">
-    <a class="apk-b-dl" href="https://drive.google.com/file/d/1fKYHnxUpd5fQzVJqZv03pJPcikTkSnnW/view?usp=drivesdk" target="_blank" rel="noopener">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg> Drive
-    </a>
-    <a class="apk-b-dl apk-b-dl2" href="https://www.mediafire.com/file/n3a958ojf89i3x3/Animes_online.apk/file" target="_blank" rel="noopener">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="3" x2="12" y2="21"/></svg> MediaFire
-    </a>
-    <button class="apk-b-close" onclick="document.getElementById('apk-banner').remove()" aria-label="Fechar">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-</div>
-
 
 <!-- ====== ADMIN COMMENTS ====== -->
 <script>
